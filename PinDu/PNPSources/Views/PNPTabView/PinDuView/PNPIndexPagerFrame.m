@@ -1,0 +1,174 @@
+//
+//  PNPPinDuPagerFrame.m
+//  PinDu
+//
+//  Created by lianhai on 14-9-28.
+//  Copyright (c) 2014年 http://pnpdb.com. All rights reserved.
+//
+
+#import "PNPIndexPagerFrame.h"
+#import "PNPIndexPagerItem.h"
+#import <objc/runtime.h>
+
+@interface PNPIndexPagerFrame () {
+    UIScrollView *_scrollView;
+    UIPageControl *_pageControl;
+}
+
+- (void)setupViews;
+
+- (void)switchFocusImageItems;
+
+@end
+
+static NSString *SG_FOCUS_ITEM_ASS_KEY = @"com.pnp.indexpager";
+
+static CGFloat SWITCH_FOCUS_PICTURE_INTERVAL = 3.0; //switch interval time
+
+@implementation PNPIndexPagerFrame
+
+@synthesize delegate = _delegate;
+
+- (id)initWithFrame:(CGRect)frame delegate:(id<PNPIndexPagerFrameDelegate>)delegate focusImageItems:(PNPIndexPagerItem *)firstItem, ...
+{
+    self = [super initWithFrame:frame];
+    if (self) {
+        NSMutableArray *imageItems = [NSMutableArray array];
+        PNPIndexPagerItem *eachItem;
+        va_list argumentList;
+        if (firstItem){
+            [imageItems addObject: firstItem];
+            va_start(argumentList, firstItem);
+            while((eachItem = va_arg(argumentList, PNPIndexPagerItem *))){
+                [imageItems addObject: eachItem];
+            }
+            va_end(argumentList);
+        }
+        
+        objc_setAssociatedObject(self, (__bridge const void *)SG_FOCUS_ITEM_ASS_KEY, imageItems, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        
+        [self setupViews];
+        
+        [self setDelegate:delegate];
+    }
+    return self;
+}
+
+- (void)dealloc
+{
+    objc_setAssociatedObject(self, (__bridge const void *)SG_FOCUS_ITEM_ASS_KEY, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+/*
+ // Only override drawRect: if you perform custom drawing.
+ // An empty implementation adversely affects performance during animation.
+ - (void)drawRect:(CGRect)rect
+ {
+ // Drawing code
+ }
+ */
+
+#pragma mark - private methods
+- (void)setupViews
+{
+    NSArray *imageItems = objc_getAssociatedObject(self, (__bridge const void *)SG_FOCUS_ITEM_ASS_KEY);
+    _scrollView = [[UIScrollView alloc] initWithFrame:self.bounds];
+    
+    CGSize size = CGSizeMake(100, 20);
+    _pageControl = [[UIPageControl alloc] initWithFrame:CGRectMake(self.bounds.size.width *.5 - size.width *.5, self.bounds.size.height - size.height, size.width, size.height)];
+    
+    [self addSubview:_scrollView];
+    [self addSubview:_pageControl];
+    
+    /*
+     _scrollView.layer.cornerRadius = 10;
+     _scrollView.layer.borderWidth = 1 ;
+     _scrollView.layer.borderColor = [[UIColor lightGrayColor ] CGColor];
+     */
+    _scrollView.showsHorizontalScrollIndicator = NO;
+    _scrollView.pagingEnabled = YES;
+    
+    _pageControl.numberOfPages = imageItems.count;
+    _pageControl.currentPage = 0;
+    
+    _pageControl.currentPageIndicatorTintColor = [UIColor whiteColor];
+    _pageControl.pageIndicatorTintColor = [UIColor grayColor];
+    
+    _scrollView.delegate = self;
+    
+    // single tap gesture recognizer
+    UITapGestureRecognizer *tapGestureRecognize = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(singleTapGestureRecognizer:)];
+    tapGestureRecognize.delegate = self;
+    tapGestureRecognize.numberOfTapsRequired = 1;
+    [_scrollView addGestureRecognizer:tapGestureRecognize];
+    _scrollView.contentSize = CGSizeMake(_scrollView.frame.size.width * imageItems.count, _scrollView.frame.size.height);
+    for (int i = 0; i < imageItems.count; i++) {
+        PNPIndexPagerItem *item = [imageItems objectAtIndex:i];
+        //添加图片展示按钮
+        UIButton * imageView = [UIButton buttonWithType:UIButtonTypeCustom];
+        [imageView setFrame:CGRectMake(i * _scrollView.frame.size.width, 0, _scrollView.frame.size.width, _scrollView.frame.size.height)];
+        [imageView setBackgroundImage:item.image forState:UIControlStateNormal];
+        imageView.tag = i;
+        //添加点击事件
+        [imageView addTarget:self action:@selector(clickPageImage:) forControlEvents:UIControlEventTouchUpInside];
+        //        UIImageView *imageView = [[UIImageView alloc] initWithFrame:CGRectMake(i * _scrollView.frame.size.width, 0, _scrollView.frame.size.width, _scrollView.frame.size.height)];
+        //        imageView.image = item.image;
+        //添加标题栏
+        UILabel * lbltitle = [[UILabel alloc] initWithFrame:CGRectMake(i * _scrollView.frame.size.width, _scrollView.frame.size.height-22.0, _scrollView.frame.size.width, 22.0)];
+        lbltitle.text = item.title;
+        lbltitle.textColor = [UIColor whiteColor];
+        lbltitle.backgroundColor = [UIColor clearColor];
+        
+        [_scrollView addSubview:imageView];
+        [_scrollView addSubview:lbltitle];
+    }
+    
+    [self performSelector:@selector(switchFocusImageItems) withObject:nil afterDelay:SWITCH_FOCUS_PICTURE_INTERVAL];
+    //objc_setAssociatedObject(self, (const void *)SG_FOCUS_ITEM_ASS_KEY, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+- (void)switchFocusImageItems
+{
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(switchFocusImageItems) object:nil];
+    
+    CGFloat targetX = _scrollView.contentOffset.x + _scrollView.frame.size.width;
+    [self moveToTargetPosition:targetX];
+    
+    [self performSelector:@selector(switchFocusImageItems) withObject:nil afterDelay:SWITCH_FOCUS_PICTURE_INTERVAL];
+}
+
+- (void)singleTapGestureRecognizer:(UIGestureRecognizer *)gestureRecognizer
+{
+//    NSLog(@"%s", __FUNCTION__);
+    NSArray *imageItems = objc_getAssociatedObject(self, (__bridge const void *)SG_FOCUS_ITEM_ASS_KEY);
+    int page = (int)(_scrollView.contentOffset.x / _scrollView.frame.size.width);
+    if (page > -1 && page < imageItems.count) {
+        PNPIndexPagerItem *item = [imageItems objectAtIndex:page];
+        if ([self.delegate respondsToSelector:@selector(foucusImageFrame:didSelectItem:)]) {
+            [self.delegate foucusImageFrame:self didSelectItem:item];
+        }
+    }
+    //objc_setAssociatedObject(self, (const void *)SG_FOCUS_ITEM_ASS_KEY, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+- (void)moveToTargetPosition:(CGFloat)targetX
+{
+//    NSLog(@"moveToTargetPosition : %f" , targetX);
+    if (targetX >= _scrollView.contentSize.width) {
+        targetX = 0.0;
+    }
+    
+    [_scrollView setContentOffset:CGPointMake(targetX, 0) animated:YES] ;
+    _pageControl.currentPage = (int)(_scrollView.contentOffset.x / _scrollView.frame.size.width);
+}
+#pragma mark - UIScrollViewDelegate
+
+- (void)scrollViewDidScroll:(UIScrollView *)scrollView
+{
+    _pageControl.currentPage = (int)(scrollView.contentOffset.x / scrollView.frame.size.width);
+    
+}
+#pragma mark - UIButtonTouchEvent
+-(void)clickPageImage:(UIButton *)sender{
+    NSLog(@"click button tag is %d",sender.tag);
+}
+@end
